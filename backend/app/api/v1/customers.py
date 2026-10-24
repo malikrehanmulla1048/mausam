@@ -112,3 +112,46 @@ async def get_customer(business_id: str, customer_id: str):
         "outstanding_amount": round(sum(i.get("total_amount", 0) for i in outstanding_invoices), 2),
         "total_invoices": len(invoices),
     }
+
+
+from pydantic import BaseModel
+from typing import Optional
+from app.services.sms import dispatch_sms, generate_sms_text
+
+
+class CustomerSMSRequest(BaseModel):
+    phone: str
+    message: Optional[str] = None
+    tone: str = "firm"
+    language: str = "en"
+    amount_str: Optional[str] = None
+    days_overdue: int = 15
+
+
+@router.post("/{business_id}/customers/{customer_id}/send-sms")
+async def send_customer_sms(business_id: str, customer_id: str, req: CustomerSMSRequest):
+    """Dispatch an SMS payment reminder to a customer via SMS Gateway/SNS."""
+    db = get_db()
+    cust = db.customers.find_one({"business_id": business_id, "customer_id": customer_id})
+    cust_name = cust.get("name", customer_id) if cust else customer_id
+
+    msg = req.message
+    if not msg:
+        msg = generate_sms_text(
+            customer_name=cust_name,
+            overdue_amount_formatted=req.amount_str or "₹1,50,000",
+            days_overdue=req.days_overdue,
+            tone=req.tone,
+            language=req.language,
+        )
+
+    result = await dispatch_sms(
+        business_id=business_id,
+        recipient_phone=req.phone,
+        message=msg,
+        customer_id=customer_id,
+        customer_name=cust_name,
+        tone=req.tone,
+        language=req.language,
+    )
+    return result

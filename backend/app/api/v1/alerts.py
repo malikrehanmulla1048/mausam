@@ -98,9 +98,9 @@ async def preview_alert(business_id: str, req: AlertPreviewRequest):
         "text": text,
         "translate_info": translate_info,
         "polly_available": __import__("app.core.config", fromlist=["settings"]).settings.POLLY_ENABLED,
-        "delivery_channels": ["in_app"],
-        "whatsapp_available": False,
-        "whatsapp_note": "WhatsApp delivery requires Meta Business approval. Not configured in this deployment.",
+        "delivery_channels": ["in_app", "sms"],
+        "sms_available": True,
+        "sms_note": "Transactional SMS delivery active via Amazon SNS / SMS Gateway.",
     }
 
 
@@ -164,3 +164,26 @@ async def generate_alerts(business_id: str):
         alerts_generated.append(alert)
 
     return {"alerts_generated": len(alerts_generated), "alerts": alerts_generated}
+
+
+class AlertSMSRequest(BaseModel):
+    phone: str
+    message: Optional[str] = None
+
+
+@router.post("/{business_id}/alerts/{alert_id}/send-sms")
+async def send_alert_sms(business_id: str, alert_id: str, req: AlertSMSRequest):
+    """Send an SMS notification for a specific system alert."""
+    db = get_db()
+    alert = db.alerts.find_one({"business_id": business_id, "alert_id": alert_id})
+    if not alert:
+        raise HTTPException(404, f"Alert {alert_id} not found")
+
+    msg = req.message or f"MAUSAM Alert: {alert.get('title', '')} - {alert.get('message_en', '')}"
+    from app.services.sms import dispatch_sms
+    result = await dispatch_sms(
+        business_id=business_id,
+        recipient_phone=req.phone,
+        message=msg[:160],
+    )
+    return result

@@ -56,6 +56,16 @@ class Settings(BaseSettings):
     SNS_TOPIC_ARN: str = ""
     SNS_ENABLED: bool = False
 
+    # Twilio SMS
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_FROM_NUMBER: str = ""
+    TWILIO_ENABLED: bool = False
+
+    # Fast2SMS (India Quick SMS)
+    FAST2SMS_API_KEY: str = ""
+    FAST2SMS_ENABLED: bool = False
+
     # SES
     SES_FROM_EMAIL: str = "noreply@mausam.example.com"
     SES_ENABLED: bool = False

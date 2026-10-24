@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import { 
   Users, AlertTriangle, CheckCircle, Clock, 
-  Send, ExternalLink, Filter, TrendingDown, DollarSign, MessageCircle 
+  Send, ExternalLink, Filter, TrendingDown, DollarSign, 
+  MessageSquare, Smartphone, Check, Loader2, MessageCircle 
 } from 'lucide-react';
+import { sendCustomerSMS } from '../api/client';
 
 interface Customer {
   id: string;
   name: string;
   location: string;
+  phone: string;
   grade: 'A+' | 'A' | 'B' | 'C' | 'D';
   promisedDays: number;
   actualDays: number;
@@ -23,6 +26,7 @@ const mockCustomers: Customer[] = [
     id: 'cust_01',
     name: 'Balaji Retail Fabrics',
     location: 'Ahmedabad, Gujarat',
+    phone: '+91 98250 11001',
     grade: 'D',
     promisedDays: 30,
     actualDays: 78,
@@ -36,6 +40,7 @@ const mockCustomers: Customer[] = [
     id: 'cust_02',
     name: 'Mehta & Sons Wholesalers',
     location: 'Surat, Gujarat',
+    phone: '+91 98250 11002',
     grade: 'C',
     promisedDays: 45,
     actualDays: 72,
@@ -49,6 +54,7 @@ const mockCustomers: Customer[] = [
     id: 'cust_03',
     name: 'Kothari Exports Corp',
     location: 'Mumbai, Maharashtra',
+    phone: '+91 98250 11003',
     grade: 'B',
     promisedDays: 60,
     actualDays: 66,
@@ -62,6 +68,7 @@ const mockCustomers: Customer[] = [
     id: 'cust_04',
     name: 'Navkar Design Studios',
     location: 'Jaipur, Rajasthan',
+    phone: '+91 98250 11004',
     grade: 'A',
     promisedDays: 30,
     actualDays: 32,
@@ -75,6 +82,7 @@ const mockCustomers: Customer[] = [
     id: 'cust_05',
     name: 'Reliance Retail Supply Vendor',
     location: 'Navi Mumbai, Maharashtra',
+    phone: '+91 98250 11005',
     grade: 'A+',
     promisedDays: 45,
     actualDays: 44,
@@ -91,10 +99,17 @@ interface DebtorDNAProps {
   language: string;
 }
 
-export const DebtorDNA: React.FC<DebtorDNAProps> = ({ language }) => {
+export const DebtorDNA: React.FC<DebtorDNAProps> = ({ businessId, language }) => {
   const [selectedGrade, setSelectedGrade] = useState<string>('ALL');
   const [activeModalCust, setActiveModalCust] = useState<Customer | null>(null);
   const [reminderTone, setReminderTone] = useState<'gentle' | 'firm' | 'legal'>('firm');
+  const [recipientPhone, setRecipientPhone] = useState<string>('');
+  const [smsStatus, setSmsStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [smsDispatchId, setSmsDispatchId] = useState<string>('');
+  const [smsDeliveryChannel, setSmsDeliveryChannel] = useState<string>('');
+  const [smsIsSimulated, setSmsIsSimulated] = useState<boolean>(true);
+  const [smsDeliveryNote, setSmsDeliveryNote] = useState<string>('');
+  const [smsErrorMsg, setSmsErrorMsg] = useState<string>('');
 
   const filteredCustomers = mockCustomers.filter((c) => {
     if (selectedGrade === 'ALL') return true;
@@ -126,28 +141,65 @@ export const DebtorDNA: React.FC<DebtorDNAProps> = ({ language }) => {
     }
   };
 
-  // Multilingual reminder template
-  const getWhatsAppTemplate = (cust: Customer, tone: 'gentle' | 'firm' | 'legal') => {
+  // Multilingual SMS reminder template (concise for SMS delivery)
+  const getSMSTemplate = (cust: Customer, tone: 'gentle' | 'firm' | 'legal') => {
     const overdue = formatINR(cust.overdueAmount);
+    const delayDays = Math.max(0, cust.actualDays - cust.promisedDays);
+
     if (language === 'hi') {
       if (tone === 'gentle') {
-        return `नमस्ते ${cust.name}, रमेश टेक्सटाइल्स से स्मरण पत्र। इनवॉइस बकाया ${overdue} देय हो चुका है। कृपया जल्द भुगतान की पुष्टि करें। धन्यवाद।`;
+        return `रमेश टेक्सटाइल्स: नमस्ते ${cust.name}, बकाया ${overdue} देय है। कृपया भुगतान की पुष्टि करें। धन्यवाद।`;
       } else if (tone === 'firm') {
-        return `प्रिय ${cust.name}, रमेश टेक्सटाइल्स से आवश्यक सूचना। आपका बकाया ${overdue} अब ${cust.actualDays - cust.promisedDays} दिनों से लंबित है। कृपया आज ही RTGS/NEFT द्वारा भुगतान सुनिश्चित करें।`;
+        return `अति-आवश्यक रमेश टेक्सटाइल्स: ${cust.name}, ${overdue} का भुगतान ${delayDays} दिनों से लंबित है। कृपया आज ही RTGS/NEFT करें।`;
       } else {
-        return `कानूनी नोटिस चेतावनी: ${cust.name}, MSMED Act Section 15/16 के तहत बकाया ${overdue} 45 दिनों की वैधानिक सीमा पार कर चुका है। 3 कार्य दिवसों में भुगतान न करने पर बैंक ब्याज दावा और MSME समाधान पोर्टल पर शिकायत दर्ज की जाएगी।`;
+        return `कानूनी नोटिस रमेश टेक्सटाइल्स: ${cust.name}, MSMED Act तहत बकाया ${overdue} 3 दिनों में न भरने पर 3x ब्याज व कानूनी कार्रवाई होगी।`;
       }
     } else if (language === 'gu') {
-      return `નમસ્તે ${cust.name}, રમેશ ટેક્સટાઈલ્સ તરફથી નમ્ર વિનંતી। આપનું ${overdue} નું પેમેન્ટ ${cust.actualDays - cust.promisedDays} દિવસથી બાકી છે। મહેરબાની કરીને તાત્કાલિક ચૂકવણી કરશોજી।`;
+      return `રમેશ ટેક્સટાઈલ્સ: નમસ્તે ${cust.name}, આપનું ${overdue} નું પેમેન્ટ ${delayDays} દિવસથી બાકી છે. કૃપા કરીને તાત્કાલિક ચૂકવણી કરશોજી.`;
     }
 
     // Default English
     if (tone === 'gentle') {
-      return `Dear ${cust.name}, gentle courtesy reminder from Ramesh Textiles regarding outstanding invoices totaling ${overdue}. Kindly let us know once scheduled. Thank you!`;
+      return `Ramesh Textiles: Gentle courtesy reminder for ${cust.name}. Overdue ${overdue} is pending. Kindly confirm payment schedule. Thank you.`;
     } else if (tone === 'firm') {
-      return `URGENT: ${cust.name}, payment of ${overdue} is overdue by ${cust.actualDays - cust.promisedDays} days past agreed credit terms. Please process payment today to avoid supply disruption.`;
+      return `URGENT Ramesh Textiles: ${cust.name}, payment of ${overdue} is overdue by ${delayDays} days. Please process payment today to avoid supply hold.`;
     } else {
-      return `FORMAL NOTICE: ${cust.name}, invoice amount of ${overdue} remains unpaid beyond stipulated credit period. Under MSMED Act Sections 15 & 16, interest at 3x RBI bank rate becomes applicable. Please clear dues within 3 days.`;
+      return `NOTICE Ramesh Textiles: ${cust.name}, dues ${overdue} unpaid past terms. Under MSMED Act, interest at 3x RBI rate applies. Clear within 3 days.`;
+    }
+  };
+
+  const openCustomerModal = (cust: Customer) => {
+    setActiveModalCust(cust);
+    setRecipientPhone(cust.phone || '+91 98250 11001');
+    setSmsStatus('idle');
+    setSmsDispatchId('');
+    setSmsDeliveryChannel('');
+    setSmsIsSimulated(true);
+    setSmsDeliveryNote('');
+    setSmsErrorMsg('');
+  };
+
+  const handleSendSMS = async () => {
+    if (!activeModalCust) return;
+    setSmsStatus('sending');
+    setSmsErrorMsg('');
+    try {
+      const res = await sendCustomerSMS(businessId, activeModalCust.id, {
+        phone: recipientPhone,
+        message: getSMSTemplate(activeModalCust, reminderTone),
+        tone: reminderTone,
+        language,
+        amount_str: formatINR(activeModalCust.overdueAmount),
+        days_overdue: Math.max(0, activeModalCust.actualDays - activeModalCust.promisedDays),
+      });
+      setSmsStatus('sent');
+      setSmsDispatchId(res.dispatch_id || 'SMS-DISPATCHED');
+      setSmsDeliveryChannel(res.delivery_channel || 'SIMULATED_GATEWAY');
+      setSmsIsSimulated(Boolean(res.is_simulated ?? (res.delivery_channel === 'SIMULATED_GATEWAY')));
+      setSmsDeliveryNote(res.delivery_note || '');
+    } catch (err: any) {
+      setSmsStatus('error');
+      setSmsErrorMsg(err.message || 'Failed to dispatch SMS');
     }
   };
 
@@ -253,11 +305,11 @@ export const DebtorDNA: React.FC<DebtorDNAProps> = ({ language }) => {
               {/* Action Button */}
               <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
                 <button
-                  onClick={() => setActiveModalCust(cust)}
+                  onClick={() => openCustomerModal(cust)}
                   className="btn-primary"
-                  style={{ flex: 1, fontSize: '0.76rem', padding: '0.45rem', justifyContent: 'center' }}
+                  style={{ flex: 1, fontSize: '0.76rem', padding: '0.45rem', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
                 >
-                  <MessageCircle size={14} /> Send WhatsApp Nudge
+                  <MessageSquare size={14} /> Send SMS Reminder
                 </button>
               </div>
             </div>
@@ -265,7 +317,7 @@ export const DebtorDNA: React.FC<DebtorDNAProps> = ({ language }) => {
         })}
       </div>
 
-      {/* WhatsApp Modal */}
+      {/* SMS Modal */}
       {activeModalCust && (
         <div style={{
           position: 'fixed',
@@ -281,18 +333,42 @@ export const DebtorDNA: React.FC<DebtorDNAProps> = ({ language }) => {
           zIndex: 1000,
           padding: '1.5rem',
         }}>
-          <div className="glass-panel" style={{ width: '100%', maxWidth: '520px', padding: '1.75rem', background: 'var(--bg-surface)' }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '540px', padding: '1.75rem', background: 'var(--bg-surface)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <MessageCircle size={20} color="#25D366" />
-                <h3 style={{ fontSize: '1.15rem', fontWeight: 700 }}>WhatsApp Payment Reminder</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <Smartphone size={20} color="#38bdf8" />
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 700 }}>SMS Payment Reminder</h3>
+                <span className="pill pill-indigo" style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem' }}>Transactional SMS</span>
               </div>
               <button onClick={() => setActiveModalCust(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}>×</button>
             </div>
 
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-              Drafted for <strong>{activeModalCust.name}</strong> • Overdue: {formatINR(activeModalCust.overdueAmount)}
+              Drafted for <strong>{activeModalCust.name}</strong> • Overdue: <span style={{ color: 'var(--rose-danger)', fontWeight: 600 }}>{formatINR(activeModalCust.overdueAmount)}</span>
             </p>
+
+            {/* Recipient Phone Input */}
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.35rem', fontWeight: 600 }}>
+                Recipient Mobile Number (E.164 format)
+              </label>
+              <input
+                type="text"
+                value={recipientPhone}
+                onChange={(e) => setRecipientPhone(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid var(--border-medium)',
+                  borderRadius: '6px',
+                  padding: '0.5rem 0.75rem',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem',
+                  outline: 'none',
+                }}
+                placeholder="+91 98250 12345"
+              />
+            </div>
 
             {/* Tone Selector */}
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
@@ -317,26 +393,133 @@ export const DebtorDNA: React.FC<DebtorDNAProps> = ({ language }) => {
               fontSize: '0.85rem',
               lineHeight: 1.6,
               color: 'var(--text-primary)',
-              marginBottom: '1.25rem',
             }}>
-              {getWhatsAppTemplate(activeModalCust, reminderTone)}
+              {getSMSTemplate(activeModalCust, reminderTone)}
             </div>
 
+            {/* Character & Segment Counter */}
+            {(() => {
+              const text = getSMSTemplate(activeModalCust, reminderTone);
+              const isUnder160 = text.length <= 160;
+              return (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.4rem', marginBottom: '1rem' }}>
+                  <span style={{ color: isUnder160 ? 'var(--emerald-success)' : 'var(--amber-warning)', fontWeight: 600 }}>
+                    {text.length} / 160 characters • {Math.ceil(text.length / 160)} SMS Part{Math.ceil(text.length / 160) > 1 ? 's' : ''}
+                  </span>
+                  <span>DLT Header: RMSTXT</span>
+                </div>
+              );
+            })()}
+
+            {/* Status alerts */}
+            {smsStatus === 'sent' && (
+              smsIsSimulated ? (
+                <div style={{
+                  background: 'rgba(245, 158, 11, 0.12)',
+                  border: '1px solid var(--amber-warning)',
+                  borderRadius: '8px',
+                  padding: '0.75rem 0.95rem',
+                  fontSize: '0.8rem',
+                  color: 'var(--text-primary)',
+                  marginBottom: '1rem',
+                  lineHeight: 1.5,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, color: 'var(--amber-warning)', marginBottom: '0.3rem' }}>
+                    <AlertTriangle size={16} />
+                    <span>Simulated Gateway Mode • Ref: {smsDispatchId}</span>
+                  </div>
+                  <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
+                    Logged to MongoDB audit trail. No telecom SMS provider (AWS SNS / Twilio / Fast2SMS) credentials are set in <code>backend/.env</code>, so cellular transmission was simulated.
+                  </p>
+                  <p style={{ margin: '0.4rem 0 0 0', color: '#38bdf8', fontSize: '0.78rem', fontWeight: 600 }}>
+                    👉 Click "Send via WhatsApp" below to deliver directly to {recipientPhone} right now!
+                  </p>
+                </div>
+              ) : (
+                <div style={{
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  border: '1px solid var(--emerald-success)',
+                  borderRadius: '8px',
+                  padding: '0.65rem 0.9rem',
+                  fontSize: '0.8rem',
+                  color: 'var(--emerald-success)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  marginBottom: '1rem'
+                }}>
+                  <Check size={16} />
+                  <span>Real SMS dispatched via {smsDeliveryChannel}! Ref: <strong>{smsDispatchId}</strong></span>
+                </div>
+              )
+            )}
+            {smsStatus === 'error' && (
+              <div style={{
+                background: 'rgba(244, 63, 94, 0.15)',
+                border: '1px solid var(--rose-danger)',
+                borderRadius: '8px',
+                padding: '0.65rem 0.9rem',
+                fontSize: '0.8rem',
+                color: 'var(--rose-danger)',
+                marginBottom: '1rem'
+              }}>
+                {smsErrorMsg}
+              </div>
+            )}
+
             {/* CTA */}
-            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-              <button onClick={() => setActiveModalCust(null)} className="btn-secondary" style={{ fontSize: '0.8rem' }}>
-                Cancel
-              </button>
-              <a
-                href={`https://wa.me/?text=${encodeURIComponent(getWhatsAppTemplate(activeModalCust, reminderTone))}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-success"
-                style={{ fontSize: '0.8rem', textDecoration: 'none' }}
-              >
-                <Send size={14} /> Open in WhatsApp
-              </a>
-            </div>
+            {(() => {
+              const cleanDigits = recipientPhone.replace(/\D/g, '');
+              const waTarget = cleanDigits.startsWith('91') ? cleanDigits : `91${cleanDigits}`;
+              const cleanSmsPhone = recipientPhone.replace(/\s+/g, '');
+              const messageText = getSMSTemplate(activeModalCust, reminderTone);
+
+              return (
+                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <button onClick={() => setActiveModalCust(null)} className="btn-secondary" style={{ fontSize: '0.8rem' }}>
+                    Close
+                  </button>
+                  <a
+                    href={`https://wa.me/${waTarget}?text=${encodeURIComponent(messageText)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-primary"
+                    style={{
+                      fontSize: '0.8rem',
+                      textDecoration: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      background: '#25D366',
+                      color: '#000',
+                      fontWeight: 700,
+                      border: 'none',
+                    }}
+                    title="Deliver reminder instantly to receiver's phone via WhatsApp"
+                  >
+                    <MessageCircle size={15} /> Send via WhatsApp
+                  </a>
+                  <a
+                    href={`sms:${cleanSmsPhone}?body=${encodeURIComponent(messageText)}`}
+                    className="btn-secondary"
+                    style={{ fontSize: '0.8rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                    title="Open native mobile device Messages app"
+                  >
+                    <Smartphone size={14} /> Open Phone SMS
+                  </a>
+                  <button
+                    onClick={handleSendSMS}
+                    disabled={smsStatus === 'sending'}
+                    className="btn-secondary"
+                    style={{ fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                    title="Send via backend SMS gateway (simulated or live if configured)"
+                  >
+                    {smsStatus === 'sending' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                    {smsStatus === 'sent' ? 'Resend via Gateway' : 'Send via SMS Gateway'}
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

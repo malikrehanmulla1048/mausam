@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Bell, AlertTriangle, AlertCircle, Sparkles, Check, 
-  Send, MessageSquare, Volume2, Globe, Clock, ShieldCheck 
+  Send, MessageSquare, Volume2, Globe, Clock, ShieldCheck, MessageCircle 
 } from 'lucide-react';
 
 interface AlertItem {
@@ -11,6 +11,7 @@ interface AlertItem {
   description: string;
   amount?: number;
   recipientName?: string;
+  phone?: string;
   dueDate?: string;
   isRead: boolean;
   timeAgo: string;
@@ -43,6 +44,7 @@ const mockAlerts: AlertItem[] = [
     description: 'Invoices exceeding agreed 30-day credit limit by +48 days. Total outstanding ₹5,20,000. Send automated legal caution notice.',
     amount: 520000,
     recipientName: 'Balaji Retail Fabrics',
+    phone: '+919825011001',
     isRead: false,
     timeAgo: '3 hours ago',
   },
@@ -193,17 +195,47 @@ export const AlertsCentre: React.FC<AlertsCentreProps> = ({ language }) => {
                   </button>
                 )}
 
-                {item.recipientName && (
-                  <a
-                    href={`https://wa.me/?text=${encodeURIComponent(`Reminder from Ramesh Textiles regarding overdue account for ${item.recipientName}. Total: ${formatINR(item.amount)}`)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-success"
-                    style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem', textDecoration: 'none' }}
-                  >
-                    <Send size={13} /> WhatsApp
-                  </a>
-                )}
+                {item.recipientName && (() => {
+                  const rawPhone = item.phone || '+919825011001';
+                  const cleanDigits = rawPhone.replace(/\D/g, '');
+                  const waTarget = cleanDigits.startsWith('91') ? cleanDigits : `91${cleanDigits}`;
+                  const cleanSms = rawPhone.replace(/\s+/g, '');
+                  const msgText = `Ramesh Textiles Alert: Overdue payment notice for ${item.recipientName}. Total: ${formatINR(item.amount)}. Please clear immediately.`;
+
+                  return (
+                    <>
+                      <a
+                        href={`https://wa.me/${waTarget}?text=${encodeURIComponent(msgText)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-primary"
+                        style={{
+                          fontSize: '0.75rem',
+                          padding: '0.35rem 0.65rem',
+                          textDecoration: 'none',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          background: '#25D366',
+                          color: '#000',
+                          fontWeight: 700,
+                          border: 'none',
+                        }}
+                        title="Send reminder directly via WhatsApp"
+                      >
+                        <MessageCircle size={13} /> WhatsApp
+                      </a>
+                      <a
+                        href={`sms:${cleanSms}?body=${encodeURIComponent(msgText)}`}
+                        className="btn-secondary"
+                        style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                        title="Send SMS via mobile device"
+                      >
+                        <MessageSquare size={13} /> SMS
+                      </a>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           </div>

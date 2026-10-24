@@ -130,3 +130,20 @@ export const resetDemo = (id: string) =>
   request<any>(`/api/v1/businesses/${id}/demo/reset`, { method: 'POST' });
 export const runFullAnalysis = (id: string) =>
   request<any>(`/api/v1/businesses/${id}/demo/run-analysis`, { method: 'POST' });
+
+// ─── SMS Integration ──────────────────────────────────────────────────────────
+export const sendCustomerSMS = (
+  bid: string,
+  cid: string,
+  body: { phone: string; message?: string; tone?: string; language?: string; amount_str?: string; days_overdue?: number }
+) =>
+  request<any>(`/api/v1/businesses/${bid}/customers/${cid}/send-sms`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+export const sendAlertSMS = (bid: string, aid: string, body: { phone: string; message?: string }) =>
+  request<any>(`/api/v1/businesses/${bid}/alerts/${aid}/send-sms`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
